@@ -15,6 +15,11 @@
 
   // Redirect if already authenticated
   $effect(() => {
+    if (authManager.isProxyMode) {
+      router.navigate('/');
+      return;
+    }
+
     if (authManager.isAuthenticated) {
       router.navigate('/');
     }

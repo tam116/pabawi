@@ -218,9 +218,9 @@ export class ConfigService {
             : undefined,
           resetTimeout: process.env.PUPPETDB_CIRCUIT_BREAKER_RESET_TIMEOUT
             ? parseInt(
-                process.env.PUPPETDB_CIRCUIT_BREAKER_RESET_TIMEOUT,
-                10,
-              )
+              process.env.PUPPETDB_CIRCUIT_BREAKER_RESET_TIMEOUT,
+              10,
+            )
             : undefined,
         };
       }
@@ -296,9 +296,9 @@ export class ConfigService {
             : undefined,
           resetTimeout: process.env.PUPPETSERVER_CIRCUIT_BREAKER_RESET_TIMEOUT
             ? parseInt(
-                process.env.PUPPETSERVER_CIRCUIT_BREAKER_RESET_TIMEOUT,
-                10,
-              )
+              process.env.PUPPETSERVER_CIRCUIT_BREAKER_RESET_TIMEOUT,
+              10,
+            )
             : undefined,
         };
       }
@@ -512,8 +512,8 @@ export class ConfigService {
         const parsedWhitelist = JSON.parse(whitelistJson) as unknown;
         const whitelistArray: string[] = Array.isArray(parsedWhitelist)
           ? parsedWhitelist.filter(
-              (item): item is string => typeof item === "string",
-            )
+            (item): item is string => typeof item === "string",
+          )
           : [];
         const matchMode = process.env.COMMAND_WHITELIST_MATCH_MODE;
         commandWhitelist = {
@@ -584,6 +584,16 @@ export class ConfigService {
           process.env.UI_SHOW_HOME_PAGE_RUN_CHART !== "false",
       };
 
+      // Parse authentication configuration
+      const auth = {
+        mode: process.env.AUTH_MODE,
+        proxy: {
+          userHeader: process.env.AUTH_PROXY_USER_HEADER,
+          emailHeader: process.env.AUTH_PROXY_EMAIL_HEADER,
+          groupsHeader: process.env.AUTH_PROXY_GROUPS_HEADER,
+        },
+      };
+
       // Parse provisioning safety configuration
       const provisioning = {
         allowDestructiveActions:
@@ -594,6 +604,7 @@ export class ConfigService {
       const rawConfig = {
         port: process.env.PORT ? parseInt(process.env.PORT, 10) : undefined,
         host: process.env.HOST,
+        auth,
         boltProjectPath: process.env.BOLT_PROJECT_PATH,
         commandWhitelist,
         executionTimeout: process.env.BOLT_EXECUTION_TIMEOUT

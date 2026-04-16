@@ -19,6 +19,7 @@
   import ProvisionPage from './pages/ProvisionPage.svelte';
   import IntegrationConfigPage from './pages/IntegrationConfigPage.svelte';
   import { router } from './lib/router.svelte';
+  import { authManager } from './lib/auth.svelte';
   import type { RouteConfig } from './lib/router.svelte';
   import { get } from './lib/api';
   import { onMount } from 'svelte';
@@ -46,6 +47,8 @@
 
   // Check setup status on mount
   onMount(async () => {
+    await authManager.initializeAuth();
+
     try {
       const status = await get<{ isComplete: boolean }>('/api/setup/status');
       setupComplete = status.isComplete;

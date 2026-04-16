@@ -38,6 +38,7 @@ import { BatchExecutionService } from "./services/BatchExecutionService";
 import { errorHandler, requestIdMiddleware } from "./middleware/errorHandler";
 import { expertModeMiddleware } from "./middleware/expertMode";
 import { createAuthMiddleware } from "./middleware/authMiddleware";
+import { createProxyAuthMiddleware } from "./middleware/proxyAuthMiddleware";
 import { createRbacMiddleware } from "./middleware/rbacMiddleware";
 import {
   helmetMiddleware,
@@ -1036,11 +1037,18 @@ async function startServer(): Promise<Express> {
 
     // Authentication routes with stricter rate limiting
     const authRateLimitMiddleware = createAuthRateLimitMiddleware();
-    app.use("/api/auth", authRateLimitMiddleware, createAuthRouter(databaseService));
+    const rawAuthMiddleware = config.auth.mode === "proxy"
+      ? createProxyAuthMiddleware(databaseService.getAdapter(), config.auth.proxy)
+      : createAuthMiddleware(databaseService.getAdapter());
+    app.use(
+      "/api/auth",
+      authRateLimitMiddleware,
+      createAuthRouter(databaseService, config.auth.mode, rawAuthMiddleware),
+    );
 
     // Create authentication and RBAC middleware instances
     // Wrap async middleware with asyncHandler to satisfy Express's void return expectation
-    const authMiddleware = asyncHandler(createAuthMiddleware(databaseService.getAdapter()));
+    const authMiddleware = asyncHandler(rawAuthMiddleware);
     const rawRbacMiddleware = createRbacMiddleware(databaseService.getAdapter());
     const rbacMiddleware = (resource: string, action: string): express.RequestHandler =>
       asyncHandler(rawRbacMiddleware(resource, action));

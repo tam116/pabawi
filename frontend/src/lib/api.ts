@@ -425,7 +425,12 @@ export async function fetchWithRetry<T = unknown>(
         }
 
         // Handle 401 Unauthorized - attempt token refresh (Requirement: 19.2, 19.3)
-        if (response.status === 401 && authManager.isAuthenticated && attempt === 0) {
+        if (
+          response.status === 401 &&
+          authManager.isAuthenticated &&
+          !authManager.isProxyMode &&
+          attempt === 0
+        ) {
           logger.info('API', 'fetch', 'Received 401, attempting token refresh');
 
           const refreshSuccess = await authManager.refreshAccessToken();

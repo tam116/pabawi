@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type RequestHandler } from "express";
 import { z } from "zod";
 import { asyncHandler } from "./asyncHandler";
 import { UserService } from "../services/UserService";
@@ -70,7 +70,9 @@ const LoginSchema = z.object({
  * Create authentication router
  */
 export function createAuthRouter(
-  databaseService: DatabaseService
+  databaseService: DatabaseService,
+  authMode: "local" | "proxy" = "local",
+  authMiddleware?: RequestHandler,
 ): Router {
   const router = Router();
   const jwtSecret = process.env.JWT_SECRET; // Use same secret for both
@@ -78,7 +80,11 @@ export function createAuthRouter(
   const authService = new AuthenticationService(databaseService.getAdapter(), jwtSecret, auditLogger);
   const userService = new UserService(databaseService.getAdapter(), authService);
   const setupService = new SetupService(databaseService.getAdapter());
-  const authMiddleware = createAuthMiddleware(databaseService.getAdapter(), jwtSecret);
+  const routeAuthMiddleware = authMiddleware ?? createAuthMiddleware(databaseService.getAdapter(), jwtSecret);
+
+  router.get("/mode", (_req: Request, res: Response) => {
+    res.status(200).json({ mode: authMode });
+  });
 
   /**
    * POST /api/auth/register
@@ -243,6 +249,16 @@ export function createAuthRouter(
   router.post(
     "/login",
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
+      if (authMode === "proxy") {
+        res.status(400).json({
+          error: {
+            code: "AUTH_MODE_PROXY",
+            message: "Login is disabled when AUTH_MODE=proxy",
+          },
+        });
+        return;
+      }
+
       logger.info("Processing user login request", {
         component: "AuthRouter",
         operation: "login",
@@ -336,8 +352,15 @@ export function createAuthRouter(
    */
   router.post(
     "/logout",
-    asyncHandler(authMiddleware),
+    asyncHandler(routeAuthMiddleware),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
+      if (authMode === "proxy") {
+        res.status(200).json({
+          message: "Logout is managed by the upstream proxy",
+        });
+        return;
+      }
+
       logger.info("Processing user logout request", {
         component: "AuthRouter",
         operation: "logout",
@@ -424,6 +447,16 @@ export function createAuthRouter(
   router.post(
     "/refresh",
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
+      if (authMode === "proxy") {
+        res.status(400).json({
+          error: {
+            code: "AUTH_MODE_PROXY",
+            message: "Token refresh is disabled when AUTH_MODE=proxy",
+          },
+        });
+        return;
+      }
+
       logger.info("Processing token refresh request", {
         component: "AuthRouter",
         operation: "refresh",
@@ -538,8 +571,18 @@ export function createAuthRouter(
    */
   router.post(
     "/change-password",
-    asyncHandler(authMiddleware),
+    asyncHandler(routeAuthMiddleware),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
+      if (authMode === "proxy") {
+        res.status(400).json({
+          error: {
+            code: "AUTH_MODE_PROXY",
+            message: "Password changes are disabled when AUTH_MODE=proxy",
+          },
+        });
+        return;
+      }
+
       logger.info("Processing password change request", {
         component: "AuthRouter",
         operation: "change-password",
@@ -659,6 +702,32 @@ export function createAuthRouter(
         });
       }
     })
+  );
+
+  /**
+   * GET /api/auth/session
+   * Return authenticated user session details for frontend bootstrap.
+   */
+  router.get(
+    "/session",
+    asyncHandler(routeAuthMiddleware),
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+      if (!req.user) {
+        sendAuthenticationError(res, "Authentication required");
+        return;
+      }
+
+      const user = await userService.getUserById(req.user.userId);
+      if (!user) {
+        sendAuthenticationError(res, "Authenticated user not found");
+        return;
+      }
+
+      res.status(200).json({
+        mode: authMode,
+        user: userService.toUserDTO(user),
+      });
+    }),
   );
 
   return router;

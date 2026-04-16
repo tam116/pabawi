@@ -21,6 +21,8 @@ const USER_KEY = 'authUser';
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const ACCESS_TOKEN_LIFETIME_MS = 60 * 60 * 1000; // 1 hour
 
+export type AuthMode = 'local' | 'proxy';
+
 export interface UserDTO {
   id: string;
   username: string;
@@ -45,6 +47,11 @@ export interface AuthResponse {
   user: UserDTO;
 }
 
+interface SessionResponse {
+  mode: AuthMode;
+  user: UserDTO;
+}
+
 export interface AuthError {
   message: string;
   code?: string;
@@ -55,6 +62,8 @@ class AuthManager {
   private _refreshToken = $state<string | null>(null);
   private _user = $state<UserDTO | null>(null);
   private _isAuthenticated = $state<boolean>(false);
+  private _mode = $state<AuthMode>('local');
+  private _isInitialized = $state<boolean>(false);
   private _isLoading = $state<boolean>(false);
   private _error = $state<AuthError | null>(null);
   private _tokenRefreshTimer: number | null = null;
@@ -89,6 +98,18 @@ class AuthManager {
     return this._isLoading;
   }
 
+  get mode(): AuthMode {
+    return this._mode;
+  }
+
+  get isProxyMode(): boolean {
+    return this._mode === 'proxy';
+  }
+
+  get isInitialized(): boolean {
+    return this._isInitialized;
+  }
+
   get error(): AuthError | null {
     return this._error;
   }
@@ -97,11 +118,45 @@ class AuthManager {
     return this._user?.isAdmin ?? false;
   }
 
+  async initializeAuth(): Promise<void> {
+    if (this._isInitialized) {
+      return;
+    }
+
+    try {
+      const modeResponse = await fetch(`${API_BASE_URL}/auth/mode`);
+      if (modeResponse.ok) {
+        const modeData = (await modeResponse.json()) as { mode?: AuthMode };
+        this._mode = modeData.mode === 'proxy' ? 'proxy' : 'local';
+      }
+    } catch (error) {
+      logger.warn('Auth', 'initializeAuth', 'Failed to fetch auth mode, defaulting to local', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      this._mode = 'local';
+    }
+
+    if (this._mode === 'proxy') {
+      this.clearAuthData();
+      await this.loadProxySession();
+    }
+
+    this._isInitialized = true;
+  }
+
   /**
    * Login with username and password
    * Requirement: 1.1, 1.2, 6.1
    */
   async login(credentials: LoginCredentials): Promise<boolean> {
+    if (this._mode === 'proxy') {
+      this._error = {
+        message: 'Login is disabled when upstream proxy authentication is enabled.',
+        code: 'AUTH_MODE_PROXY',
+      };
+      return false;
+    }
+
     this._isLoading = true;
     this._error = null;
 
@@ -168,14 +223,17 @@ class AuthManager {
       userId: this._user?.id,
     });
 
-    // Call logout endpoint to revoke tokens
-    if (this._token) {
+    // Call logout endpoint (in proxy mode this is a no-op on backend)
+    if (this._token || this._mode === 'proxy') {
       try {
+        const headers: Record<string, string> = {};
+        if (this._token) {
+          headers.Authorization = `Bearer ${this._token}`;
+        }
+
         await fetch(`${API_BASE_URL}/auth/logout`, {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this._token}`,
-          },
+          headers,
         });
       } catch (error) {
         logger.warn('Auth', 'logout', 'Logout API call failed', {
@@ -195,6 +253,10 @@ class AuthManager {
    * Requirement: 6.3, 19.2
    */
   async refreshAccessToken(): Promise<boolean> {
+    if (this._mode === 'proxy') {
+      return false;
+    }
+
     if (!this._refreshToken) {
       logger.warn('Auth', 'refreshAccessToken', 'No refresh token available');
       this.clearAuthData();
@@ -257,6 +319,10 @@ class AuthManager {
    * Get authorization header value
    */
   getAuthHeader(): string | null {
+    if (this._mode === 'proxy') {
+      return null;
+    }
+
     return this._token ? `Bearer ${this._token}` : null;
   }
 
@@ -305,6 +371,27 @@ class AuthManager {
     if (this._tokenRefreshTimer !== null) {
       window.clearTimeout(this._tokenRefreshTimer);
       this._tokenRefreshTimer = null;
+    }
+  }
+
+  private async loadProxySession(): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/session`);
+      if (!response.ok) {
+        this.clearAuthData();
+        return;
+      }
+
+      const data = (await response.json()) as SessionResponse;
+      this._mode = data.mode === 'proxy' ? 'proxy' : 'local';
+      this._user = data.user;
+      this._isAuthenticated = true;
+      this._error = null;
+    } catch (error) {
+      logger.warn('Auth', 'loadProxySession', 'Failed to load proxy-authenticated session', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      this.clearAuthData();
     }
   }
 

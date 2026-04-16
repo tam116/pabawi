@@ -15,8 +15,17 @@
   $effect(() => {
     if (!currentRoute) return;
 
+    if (!authManager.isInitialized) {
+      return;
+    }
+
     const config = currentRoute.config as RouteConfig | undefined;
     const currentPath = router.currentPath;
+
+    if (authManager.isProxyMode && currentPath === '/login') {
+      router.navigate('/');
+      return;
+    }
 
     // Skip auth checks for public routes
     if (!config?.requiresAuth) return;

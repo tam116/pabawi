@@ -58,6 +58,29 @@ export const UIConfigSchema = z.object({
 export type UIConfig = z.infer<typeof UIConfigSchema>;
 
 /**
+ * Upstream proxy authentication configuration schema
+ */
+export const ProxyAuthConfigSchema = z.object({
+  userHeader: z.string().default("x-forwarded-user"),
+  emailHeader: z.string().optional(),
+  groupsHeader: z.string().optional(),
+});
+
+export type ProxyAuthConfig = z.infer<typeof ProxyAuthConfigSchema>;
+
+/**
+ * Authentication configuration schema
+ */
+export const AuthConfigSchema = z.object({
+  mode: z.enum(["local", "proxy"]).default("local"),
+  proxy: ProxyAuthConfigSchema.default({
+    userHeader: "x-forwarded-user",
+  }),
+});
+
+export type AuthConfig = z.infer<typeof AuthConfigSchema>;
+
+/**
  * Execution queue configuration schema
  */
 export const ExecutionQueueConfigSchema = z.object({
@@ -348,6 +371,14 @@ export type IntegrationsConfig = z.infer<typeof IntegrationsConfigSchema>;
 export const AppConfigSchema = z.object({
   port: z.number().int().positive().default(3000),
   host: z.string().default("localhost"),
+  auth: AuthConfigSchema.default({
+    mode: "local",
+    proxy: {
+      userHeader: "x-forwarded-user",
+      emailHeader: "x-forwarded-email",
+      groupsHeader: "x-forwarded-groups",
+    },
+  }),
   boltProjectPath: z.string().default(process.cwd()),
   commandWhitelist: WhitelistConfigSchema,
   executionTimeout: z.number().int().positive().default(300000), // 5 minutes

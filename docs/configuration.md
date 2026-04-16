@@ -65,6 +65,38 @@ All configuration is managed through environment variables in `backend/.env`. Th
 - **Description:** Host address to bind the server
 - **Example:** `HOST=0.0.0.0` (listen on all interfaces)
 
+#### AUTH_MODE
+
+- **Type:** Enum (`local`, `proxy`)
+- **Default:** `local`
+- **Description:** Selects how Pabawi authenticates users.
+- **Example:** `AUTH_MODE=proxy`
+- **Notes:**
+  - `local`: Use built-in username/password login and JWT tokens.
+  - `proxy`: Trust identity headers set by an upstream reverse proxy and bypass local login.
+  - In `proxy` mode, do not expose the backend directly to untrusted networks.
+
+#### AUTH_PROXY_USER_HEADER
+
+- **Type:** String
+- **Default:** `x-forwarded-user`
+- **Description:** Header name used as the canonical proxy-authenticated username when `AUTH_MODE=proxy`.
+- **Example:** `AUTH_PROXY_USER_HEADER=x-auth-request-user`
+
+#### AUTH_PROXY_EMAIL_HEADER
+
+- **Type:** String (optional)
+- **Default:** unset
+- **Description:** Optional header used as fallback identity lookup by email when username lookup fails.
+- **Example:** `AUTH_PROXY_EMAIL_HEADER=x-auth-request-email`
+
+#### AUTH_PROXY_GROUPS_HEADER
+
+- **Type:** String (optional)
+- **Default:** unset
+- **Description:** Optional comma-separated group/role header passed through request context.
+- **Example:** `AUTH_PROXY_GROUPS_HEADER=x-auth-request-groups`
+
 #### BOLT_PROJECT_PATH
 
 - **Type:** String (path)
