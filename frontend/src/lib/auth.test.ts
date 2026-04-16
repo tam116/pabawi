@@ -387,4 +387,48 @@ describe('AuthManager', () => {
       expect(authManager.error).toBeNull();
     });
   });
+
+  describe('proxy mode bootstrap', () => {
+    it('should initialize proxy mode and session user from backend', async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ mode: 'proxy' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ mode: 'proxy', user: mockUser }),
+        });
+
+      await authManager.initializeAuth();
+
+      expect(authManager.isInitialized).toBe(true);
+      expect(authManager.isProxyMode).toBe(true);
+      expect(authManager.isAuthenticated).toBe(true);
+      expect(authManager.user?.id).toBe(mockUser.id);
+      expect(authManager.getAuthHeader()).toBeNull();
+    });
+
+    it('should block local login when proxy mode is active', async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ mode: 'proxy' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ mode: 'proxy', user: mockUser }),
+        });
+
+      await authManager.initializeAuth();
+
+      const result = await authManager.login({
+        username: 'testuser',
+        password: 'password123',
+      });
+
+      expect(result).toBe(false);
+      expect(authManager.error?.code).toBe('AUTH_MODE_PROXY');
+    });
+  });
 });
