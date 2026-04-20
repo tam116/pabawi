@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { router } from '../lib/router.svelte';
-  import { authManager } from '../lib/auth.svelte';
-  import type { RouteConfig } from '../lib/router.svelte';
+  import { router } from "../lib/router.svelte";
+  import { authManager } from "../lib/auth.svelte";
+  import type { RouteConfig } from "../lib/router.svelte";
 
   interface Props {
     routes: Record<string, any>;
@@ -22,8 +22,12 @@
     const config = currentRoute.config as RouteConfig | undefined;
     const currentPath = router.currentPath;
 
-    if (authManager.isProxyMode && currentPath === '/login') {
-      router.navigate('/');
+    if (
+      authManager.isProxyMode &&
+      authManager.isAuthenticated &&
+      currentPath === "/login"
+    ) {
+      router.navigate("/");
       return;
     }
 
@@ -34,14 +38,14 @@
     if (!authManager.isAuthenticated) {
       // Store intended path and redirect to login
       router.setIntendedPath(currentPath);
-      router.navigate('/login');
+      router.navigate("/login");
       return;
     }
 
     // Check admin requirement
     if (config.requiresAdmin && !authManager.user?.isAdmin) {
       // Redirect to home if not admin
-      router.navigate('/');
+      router.navigate("/");
       return;
     }
   });

@@ -148,162 +148,294 @@ export class AuthenticationService {
     ipAddress?: string,
     userAgent?: string
   ): Promise<AuthResult> {
-          // Start performance timing
-          const startTime = Date.now();
+    // Start performance timing
+    const startTime = Date.now();
 
-          // Validate input
-          if (!username || !password) {
-            return { success: false, error: 'Username and password required' };
-          }
+    // Validate input
+    if (!username || !password) {
+      return { success: false, error: 'Username and password required' };
+    }
 
-          try {
-            // Check for account lockout BEFORE attempting authentication
-            const lockoutStatus = await this.checkAccountLockout(username);
-            if (lockoutStatus.isLocked) {
-              // Still record the attempt even when locked (for permanent lockout tracking)
-              await this.recordFailedLoginAttempt(username, lockoutStatus.reason ?? 'Account locked');
-              await this.logFailedAuthentication(username, lockoutStatus.reason ?? 'Account locked');
+    try {
+      // Check for account lockout BEFORE attempting authentication
+      const lockoutStatus = await this.checkAccountLockout(username);
+      if (lockoutStatus.isLocked) {
+        // Still record the attempt even when locked (for permanent lockout tracking)
+        await this.recordFailedLoginAttempt(username, lockoutStatus.reason ?? 'Account locked');
+        await this.logFailedAuthentication(username, lockoutStatus.reason ?? 'Account locked');
 
-              // Audit log: authentication failure (account locked)
-              if (this.auditLogger) {
-                await this.auditLogger.logAuthenticationAttempt(
-                  username,
-                  false,
-                  null,
-                  ipAddress,
-                  userAgent,
-                  lockoutStatus.reason ?? 'Account locked'
-                );
-              }
-
-              return { success: false, error: lockoutStatus.reason ?? 'Account is locked' };
-            }
-
-            // Fetch user from database (including inactive users for proper error handling)
-            const user = await this.getUserByUsernameIncludingInactive(username);
-
-            if (!user) {
-              // Log failed attempt - user not found
-              await this.recordFailedLoginAttempt(username, 'User not found');
-              await this.logFailedAuthentication(username, 'User not found');
-
-              // Audit log: authentication failure (user not found)
-              if (this.auditLogger) {
-                await this.auditLogger.logAuthenticationAttempt(
-                  username,
-                  false,
-                  null,
-                  ipAddress,
-                  userAgent,
-                  'User not found'
-                );
-              }
-
-              // Use generic error to prevent username enumeration
-              return { success: false, error: 'Invalid credentials' };
-            }
-
-            // Verify password first (constant-time operation to prevent timing attacks)
-            const isPasswordValid = await this.comparePassword(password, user.passwordHash);
-
-            if (!isPasswordValid) {
-              // Record and log failed attempt - invalid password
-              await this.recordFailedLoginAttempt(username, 'Invalid password');
-              await this.logFailedAuthentication(username, 'Invalid password');
-
-              // Audit log: authentication failure (invalid password)
-              if (this.auditLogger) {
-                await this.auditLogger.logAuthenticationAttempt(
-                  username,
-                  false,
-                  user.id,
-                  ipAddress,
-                  userAgent,
-                  'Invalid password'
-                );
-              }
-
-              return { success: false, error: 'Invalid credentials' };
-            }
-
-            // Check if user is active (after password verification)
-            if (!user.isActive) {
-              // Log failed attempt - inactive account
-              await this.logFailedAuthentication(username, 'Account inactive');
-
-              // Audit log: authentication failure (inactive account)
-              if (this.auditLogger) {
-                await this.auditLogger.logAuthenticationAttempt(
-                  username,
-                  false,
-                  user.id,
-                  ipAddress,
-                  userAgent,
-                  'Account inactive'
-                );
-              }
-
-              return { success: false, error: 'Account is inactive' };
-            }
-
-            // Authentication successful - clear failed attempts
-            await this.clearFailedLoginAttempts(username);
-
-            // Generate tokens
-            const token = await this.generateToken(user);
-            const refreshToken = await this.generateRefreshToken(user);
-
-            // Update last login timestamp
-            await this.updateLastLogin(user.id);
-
-            // Update user object with new lastLoginAt
-            user.lastLoginAt = new Date().toISOString();
-
-            // Audit log: authentication success
-            if (this.auditLogger) {
-              await this.auditLogger.logAuthenticationAttempt(
-                username,
-                true,
-                user.id,
-                ipAddress,
-                userAgent
-              );
-            }
-
-            // Record authentication timing
-            const duration = Date.now() - startTime;
-            performanceMonitor.recordAuthentication(duration);
-
-            // Return success result
-            return {
-              success: true,
-              token,
-              refreshToken,
-              user: this.toUserDTO(user)
-            };
-          } catch (error) {
-            console.error('Authentication error:', error);
-            // Log failed attempt - system error
-            await this.logFailedAuthentication(username, `System error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-
-            // Audit log: authentication failure (system error)
-            if (this.auditLogger) {
-              await this.auditLogger.logAuthenticationAttempt(
-                username,
-                false,
-                null,
-                ipAddress,
-                userAgent,
-                `System error: ${error instanceof Error ? error.message : 'Unknown error'}`
-              );
-            }
-
-            return {
-              success: false,
-              error: 'Authentication failed'
-            };
-          }
+        // Audit log: authentication failure (account locked)
+        if (this.auditLogger) {
+          await this.auditLogger.logAuthenticationAttempt(
+            username,
+            false,
+            null,
+            ipAddress,
+            userAgent,
+            lockoutStatus.reason ?? 'Account locked'
+          );
         }
+
+        return { success: false, error: lockoutStatus.reason ?? 'Account is locked' };
+      }
+
+      // Fetch user from database (including inactive users for proper error handling)
+      const user = await this.getUserByUsernameIncludingInactive(username);
+
+      if (!user) {
+        // Log failed attempt - user not found
+        await this.recordFailedLoginAttempt(username, 'User not found');
+        await this.logFailedAuthentication(username, 'User not found');
+
+        // Audit log: authentication failure (user not found)
+        if (this.auditLogger) {
+          await this.auditLogger.logAuthenticationAttempt(
+            username,
+            false,
+            null,
+            ipAddress,
+            userAgent,
+            'User not found'
+          );
+        }
+
+        // Use generic error to prevent username enumeration
+        return { success: false, error: 'Invalid credentials' };
+      }
+
+      // Verify password first (constant-time operation to prevent timing attacks)
+      const isPasswordValid = await this.comparePassword(password, user.passwordHash);
+
+      if (!isPasswordValid) {
+        // Record and log failed attempt - invalid password
+        await this.recordFailedLoginAttempt(username, 'Invalid password');
+        await this.logFailedAuthentication(username, 'Invalid password');
+
+        // Audit log: authentication failure (invalid password)
+        if (this.auditLogger) {
+          await this.auditLogger.logAuthenticationAttempt(
+            username,
+            false,
+            user.id,
+            ipAddress,
+            userAgent,
+            'Invalid password'
+          );
+        }
+
+        return { success: false, error: 'Invalid credentials' };
+      }
+
+      // Check if user is active (after password verification)
+      if (!user.isActive) {
+        // Log failed attempt - inactive account
+        await this.logFailedAuthentication(username, 'Account inactive');
+
+        // Audit log: authentication failure (inactive account)
+        if (this.auditLogger) {
+          await this.auditLogger.logAuthenticationAttempt(
+            username,
+            false,
+            user.id,
+            ipAddress,
+            userAgent,
+            'Account inactive'
+          );
+        }
+
+        return { success: false, error: 'Account is inactive' };
+      }
+
+      // Authentication successful - clear failed attempts
+      await this.clearFailedLoginAttempts(username);
+
+      // Generate tokens
+      const token = await this.generateToken(user);
+      const refreshToken = await this.generateRefreshToken(user);
+
+      // Update last login timestamp
+      await this.updateLastLogin(user.id);
+
+      // Update user object with new lastLoginAt
+      user.lastLoginAt = new Date().toISOString();
+
+      // Audit log: authentication success
+      if (this.auditLogger) {
+        await this.auditLogger.logAuthenticationAttempt(
+          username,
+          true,
+          user.id,
+          ipAddress,
+          userAgent
+        );
+      }
+
+      // Record authentication timing
+      const duration = Date.now() - startTime;
+      performanceMonitor.recordAuthentication(duration);
+
+      // Return success result
+      return {
+        success: true,
+        token,
+        refreshToken,
+        user: this.toUserDTO(user)
+      };
+    } catch (error) {
+      console.error('Authentication error:', error);
+      // Log failed attempt - system error
+      await this.logFailedAuthentication(username, `System error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+      // Audit log: authentication failure (system error)
+      if (this.auditLogger) {
+        await this.auditLogger.logAuthenticationAttempt(
+          username,
+          false,
+          null,
+          ipAddress,
+          userAgent,
+          `System error: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+
+      return {
+        success: false,
+        error: 'Authentication failed'
+      };
+    }
+  }
+
+  /**
+   * Authenticate a user by trusted proxy username without password validation.
+   *
+   * @param username - User's username from trusted proxy headers
+   * @param ipAddress - Optional IP address of the request
+   * @param userAgent - Optional user agent string
+   * @returns AuthResult with tokens and user data on success, error on failure
+   */
+  public async authenticateProxyUser(
+    username: string,
+    ipAddress?: string,
+    userAgent?: string,
+    options?: { email?: string; autoProvision?: boolean }
+  ): Promise<AuthResult> {
+    const startTime = Date.now();
+
+    if (!username) {
+      return { success: false, error: 'Username required' };
+    }
+
+    try {
+      let user = await this.getUserByUsernameIncludingInactive(username);
+
+      if (!user) {
+        if (options?.autoProvision) {
+          // Provision a new local account from proxy identity headers
+          const logger = new LoggerService();
+          const userId = crypto.randomUUID();
+          const now = new Date().toISOString();
+          // Generate an unusable random password hash so no password-based login is possible
+          const unusablePasswordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+          const email = options.email ?? `${username}@provisioned.local`;
+
+          await this.db.execute(
+            `INSERT INTO users (id, username, email, passwordHash, firstName, lastName, isActive, isAdmin, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
+            [userId, username, email, unusablePasswordHash, username, '', now, now]
+          );
+
+          logger.info('Auto-provisioned local account for proxy-authenticated user', {
+            component: 'AuthenticationService',
+            operation: 'authenticateProxyUser',
+            metadata: { username },
+          });
+
+          user = await this.getUserByUsernameIncludingInactive(username);
+        }
+
+        if (!user) {
+          await this.logFailedAuthentication(username, 'User not found');
+
+          if (this.auditLogger) {
+            await this.auditLogger.logAuthenticationAttempt(
+              username,
+              false,
+              null,
+              ipAddress,
+              userAgent,
+              'User not found'
+            );
+          }
+
+          return { success: false, error: 'Invalid credentials' };
+        }
+      }
+
+      if (!user.isActive) {
+        await this.logFailedAuthentication(username, 'Account inactive');
+
+        if (this.auditLogger) {
+          await this.auditLogger.logAuthenticationAttempt(
+            username,
+            false,
+            user.id,
+            ipAddress,
+            userAgent,
+            'Account inactive'
+          );
+        }
+
+        return { success: false, error: 'Account is inactive' };
+      }
+
+      await this.clearFailedLoginAttempts(username);
+
+      const token = await this.generateToken(user);
+      const refreshToken = await this.generateRefreshToken(user);
+
+      await this.updateLastLogin(user.id);
+      user.lastLoginAt = new Date().toISOString();
+
+      if (this.auditLogger) {
+        await this.auditLogger.logAuthenticationAttempt(
+          username,
+          true,
+          user.id,
+          ipAddress,
+          userAgent
+        );
+      }
+
+      const duration = Date.now() - startTime;
+      performanceMonitor.recordAuthentication(duration);
+
+      return {
+        success: true,
+        token,
+        refreshToken,
+        user: this.toUserDTO(user)
+      };
+    } catch (error) {
+      console.error('Proxy authentication error:', error);
+      await this.logFailedAuthentication(username, `System error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+      if (this.auditLogger) {
+        await this.auditLogger.logAuthenticationAttempt(
+          username,
+          false,
+          null,
+          ipAddress,
+          userAgent,
+          `System error: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+
+      return {
+        success: false,
+        error: 'Authentication failed'
+      };
+    }
+  }
 
   /**
    * Generate JWT access token for user
@@ -712,56 +844,56 @@ export class AuthenticationService {
      * @param reason - Reason for failure
      * @param ipAddress - Optional IP address of the attempt
      */
-    private async recordFailedLoginAttempt(
-      username: string,
-      reason: string,
-      ipAddress?: string
-    ): Promise<void> {
-      try {
-        const now = new Date();
-        const timestamp = now.toISOString();
+  private async recordFailedLoginAttempt(
+    username: string,
+    reason: string,
+    ipAddress?: string
+  ): Promise<void> {
+    try {
+      const now = new Date();
+      const timestamp = now.toISOString();
 
-        // Record the failed attempt
-        await this.db.execute(
-          `INSERT INTO failed_login_attempts (username, attemptedAt, ipAddress, reason)
+      // Record the failed attempt
+      await this.db.execute(
+        `INSERT INTO failed_login_attempts (username, attemptedAt, ipAddress, reason)
            VALUES (?, ?, ?, ?)`,
-          [username, timestamp, ipAddress ?? null, reason]
-        );
+        [username, timestamp, ipAddress ?? null, reason]
+      );
 
-        // Count total failed attempts (not just within window, for permanent lockout)
-        const totalAttempts = await this.db.queryOne<{ count: number }>(
-          `SELECT COUNT(*) as count FROM failed_login_attempts
+      // Count total failed attempts (not just within window, for permanent lockout)
+      const totalAttempts = await this.db.queryOne<{ count: number }>(
+        `SELECT COUNT(*) as count FROM failed_login_attempts
            WHERE username = ?`,
-          [username]
-        );
+        [username]
+      );
 
-        const totalCount = totalAttempts?.count ?? 0;
+      const totalCount = totalAttempts?.count ?? 0;
 
-        // Check for permanent lockout first (10 attempts total)
-        if (totalCount >= this.PERMANENT_LOCKOUT_ATTEMPTS) {
-          await this.applyPermanentLockout(username, totalCount);
-          return;
-        }
-
-        // Count recent failed attempts (within the lockout window) for temporary lockout
-        const windowStart = new Date(now.getTime() - this.TEMP_LOCKOUT_WINDOW_MINUTES * 60000);
-        const recentAttempts = await this.db.queryOne<{ count: number }>(
-          `SELECT COUNT(*) as count FROM failed_login_attempts
-           WHERE username = ? AND attemptedAt >= ?`,
-          [username, windowStart.toISOString()]
-        );
-
-        const recentCount = recentAttempts?.count ?? 0;
-
-        // Check for temporary lockout (5 attempts in 15 minutes)
-        if (recentCount >= this.TEMP_LOCKOUT_ATTEMPTS) {
-          await this.applyTemporaryLockout(username, recentCount);
-        }
-      } catch (error) {
-        console.error('Error recording failed login attempt:', error);
-        // Don't throw - authentication flow should continue
+      // Check for permanent lockout first (10 attempts total)
+      if (totalCount >= this.PERMANENT_LOCKOUT_ATTEMPTS) {
+        await this.applyPermanentLockout(username, totalCount);
+        return;
       }
+
+      // Count recent failed attempts (within the lockout window) for temporary lockout
+      const windowStart = new Date(now.getTime() - this.TEMP_LOCKOUT_WINDOW_MINUTES * 60000);
+      const recentAttempts = await this.db.queryOne<{ count: number }>(
+        `SELECT COUNT(*) as count FROM failed_login_attempts
+           WHERE username = ? AND attemptedAt >= ?`,
+        [username, windowStart.toISOString()]
+      );
+
+      const recentCount = recentAttempts?.count ?? 0;
+
+      // Check for temporary lockout (5 attempts in 15 minutes)
+      if (recentCount >= this.TEMP_LOCKOUT_ATTEMPTS) {
+        await this.applyTemporaryLockout(username, recentCount);
+      }
+    } catch (error) {
+      console.error('Error recording failed login attempt:', error);
+      // Don't throw - authentication flow should continue
     }
+  }
 
   /**
    * Apply temporary account lockout

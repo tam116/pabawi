@@ -591,6 +591,7 @@ export class ConfigService {
           userHeader: process.env.AUTH_PROXY_USER_HEADER,
           emailHeader: process.env.AUTH_PROXY_EMAIL_HEADER,
           groupsHeader: process.env.AUTH_PROXY_GROUPS_HEADER,
+          autoProvisionExternalUsers: process.env.AUTO_PROVISION_EXTERNAL_USERS === 'true',
         },
       };
 

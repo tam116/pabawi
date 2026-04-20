@@ -64,6 +64,7 @@ export const ProxyAuthConfigSchema = z.object({
   userHeader: z.string().default("x-forwarded-user"),
   emailHeader: z.string().optional(),
   groupsHeader: z.string().optional(),
+  autoProvisionExternalUsers: z.boolean().default(false),
 });
 
 export type ProxyAuthConfig = z.infer<typeof ProxyAuthConfigSchema>;

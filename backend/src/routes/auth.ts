@@ -249,44 +249,77 @@ export function createAuthRouter(
   router.post(
     "/login",
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-      if (authMode === "proxy") {
-        res.status(400).json({
-          error: {
-            code: "AUTH_MODE_PROXY",
-            message: "Login is disabled when AUTH_MODE=proxy",
-          },
-        });
-        return;
-      }
-
       logger.info("Processing user login request", {
         component: "AuthRouter",
         operation: "login",
       });
 
       try {
-        // Validate request body
-        const loginData = LoginSchema.parse(req.body);
+        let username: string;
+        let authResult: Awaited<ReturnType<AuthenticationService["authenticate"]>>;
 
-        logger.debug("Login data validated", {
-          component: "AuthRouter",
-          operation: "login",
-          metadata: { username: loginData.username },
-        });
+        if (authMode === "proxy") {
+          const proxyUserHeader = (process.env.AUTH_PROXY_USER_HEADER ?? "x-forwarded-user").trim();
+          const proxyUsername = req.header(proxyUserHeader)?.trim();
 
-        // Authenticate user credentials
-        const authResult = await authService.authenticate(
-          loginData.username,
-          loginData.password,
-          req.ip ?? req.socket.remoteAddress,
-          req.headers['user-agent']
-        );
+          if (!proxyUsername) {
+            logger.warn("Login failed: missing trusted proxy identity header", {
+              component: "AuthRouter",
+              operation: "login",
+              metadata: { proxyUserHeader },
+            });
+
+            res.status(401).json({
+              error: {
+                code: ERROR_CODES.UNAUTHORIZED,
+                message: `Missing trusted proxy identity header: ${proxyUserHeader}`,
+              },
+            });
+            return;
+          }
+
+          username = proxyUsername;
+
+          logger.debug("Proxy login identity resolved from trusted header", {
+            component: "AuthRouter",
+            operation: "login",
+            metadata: { username, proxyUserHeader },
+          });
+
+          authResult = await authService.authenticateProxyUser(
+            username,
+            req.ip ?? req.socket.remoteAddress,
+            req.headers["user-agent"] as string | undefined,
+            {
+              email: process.env.AUTH_PROXY_EMAIL_HEADER
+                ? req.header(process.env.AUTH_PROXY_EMAIL_HEADER)?.trim()
+                : undefined,
+              autoProvision: process.env.AUTO_PROVISION_EXTERNAL_USERS === 'true',
+            },
+          );
+        } else {
+          const loginData = LoginSchema.parse(req.body);
+
+          logger.debug("Login data validated", {
+            component: "AuthRouter",
+            operation: "login",
+            metadata: { username: loginData.username },
+          });
+
+          username = loginData.username;
+          authResult = await authService.authenticate(
+            loginData.username,
+            loginData.password,
+            req.ip ?? req.socket.remoteAddress,
+            req.headers["user-agent"] as string | undefined,
+          );
+        }
 
         if (!authResult.success) {
           logger.warn("Login failed", {
             component: "AuthRouter",
             operation: "login",
-            metadata: { username: loginData.username, error: authResult.error },
+            metadata: { username, error: authResult.error },
           });
 
           // Return 401 Unauthorized for invalid credentials (Requirement 16.1)
@@ -297,7 +330,7 @@ export function createAuthRouter(
         logger.info("User logged in successfully", {
           component: "AuthRouter",
           operation: "login",
-          metadata: { userId: authResult.user?.id, username: loginData.username },
+          metadata: { userId: authResult.user?.id, username },
         });
 
         // Return 200 OK with tokens and user DTO

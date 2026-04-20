@@ -47,14 +47,16 @@ export interface AuthResponse {
   user: UserDTO;
 }
 
-interface SessionResponse {
-  mode: AuthMode;
-  user: UserDTO;
-}
-
 export interface AuthError {
   message: string;
   code?: string;
+}
+
+interface ErrorResponseBody {
+  error?: {
+    message?: string;
+    code?: string;
+  } | string;
 }
 
 class AuthManager {
@@ -118,6 +120,14 @@ class AuthManager {
     return this._user?.isAdmin ?? false;
   }
 
+  reset(): void {
+    this.clearAuthData();
+    this._mode = 'local';
+    this._isInitialized = false;
+    this._isLoading = false;
+    this._error = null;
+  }
+
   async initializeAuth(): Promise<void> {
     if (this._isInitialized) {
       return;
@@ -138,10 +148,68 @@ class AuthManager {
 
     if (this._mode === 'proxy') {
       this.clearAuthData();
-      await this.loadProxySession();
+      await this.authenticateProxy();
     }
 
     this._isInitialized = true;
+  }
+
+  async authenticateProxy(): Promise<boolean> {
+    if (this._mode !== 'proxy') {
+      return false;
+    }
+
+    this._isLoading = true;
+    this._error = null;
+
+    logger.info('Auth', 'authenticateProxy', 'Attempting proxy-authenticated login bootstrap');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+
+      if (!response.ok) {
+        const parsedError = await this.parseErrorResponse(response, 'Proxy authentication failed');
+
+        logger.warn('Auth', 'authenticateProxy', 'Proxy authentication failed', {
+          status: response.status,
+          error: parsedError.message,
+          code: parsedError.code,
+        });
+
+        this.clearAuthData();
+        this._error = parsedError;
+        return false;
+      }
+
+      const data = (await response.json()) as AuthResponse;
+      this.setProxyAuthData(data.user);
+
+      logger.info('Auth', 'authenticateProxy', 'Proxy authentication successful', {
+        userId: data.user.id,
+        username: data.user.username,
+      });
+
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Network error';
+
+      logger.error('Auth', 'authenticateProxy', 'Proxy authentication error', error as Error);
+
+      this.clearAuthData();
+      this._error = {
+        message: errorMessage,
+        code: 'NETWORK_ERROR',
+      };
+      return false;
+    } finally {
+      this._isLoading = false;
+    }
   }
 
   /**
@@ -150,11 +218,7 @@ class AuthManager {
    */
   async login(credentials: LoginCredentials): Promise<boolean> {
     if (this._mode === 'proxy') {
-      this._error = {
-        message: 'Login is disabled when upstream proxy authentication is enabled.',
-        code: 'AUTH_MODE_PROXY',
-      };
-      return false;
+      return this.authenticateProxy();
     }
 
     this._isLoading = true;
@@ -174,18 +238,15 @@ class AuthManager {
       });
 
       if (!response.ok) {
-        const errorData = (await response.json().catch(() => ({}))) as { error?: string };
-        const errorMessage: string = errorData.error ?? 'Login failed';
+        const parsedError = await this.parseErrorResponse(response, 'Login failed');
 
         logger.warn('Auth', 'login', 'Login failed', {
           status: response.status,
-          error: errorMessage,
+          error: parsedError.message,
+          code: parsedError.code,
         });
 
-        this._error = {
-          message: errorMessage,
-          code: `HTTP_${String(response.status)}`,
-        };
+        this._error = parsedError;
         return false;
       }
 
@@ -353,6 +414,26 @@ class AuthManager {
     this.scheduleTokenRefresh();
   }
 
+  private setProxyAuthData(user: UserDTO): void {
+    this._token = null;
+    this._refreshToken = null;
+    this._user = user;
+    this._isAuthenticated = true;
+    this._tokenExpiresAt = null;
+    this._error = null;
+
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    }
+
+    if (this._tokenRefreshTimer !== null) {
+      window.clearTimeout(this._tokenRefreshTimer);
+      this._tokenRefreshTimer = null;
+    }
+  }
+
   private clearAuthData(): void {
     this._token = null;
     this._refreshToken = null;
@@ -374,25 +455,20 @@ class AuthManager {
     }
   }
 
-  private async loadProxySession(): Promise<void> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/session`);
-      if (!response.ok) {
-        this.clearAuthData();
-        return;
-      }
+  private async parseErrorResponse(response: Response, fallbackMessage: string): Promise<AuthError> {
+    const errorData = (await response.json().catch(() => ({}))) as ErrorResponseBody;
 
-      const data = (await response.json()) as SessionResponse;
-      this._mode = data.mode === 'proxy' ? 'proxy' : 'local';
-      this._user = data.user;
-      this._isAuthenticated = true;
-      this._error = null;
-    } catch (error) {
-      logger.warn('Auth', 'loadProxySession', 'Failed to load proxy-authenticated session', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      this.clearAuthData();
+    if (typeof errorData.error === 'string') {
+      return {
+        message: errorData.error,
+        code: `HTTP_${String(response.status)}`,
+      };
     }
+
+    return {
+      message: errorData.error?.message ?? fallbackMessage,
+      code: errorData.error?.code ?? `HTTP_${String(response.status)}`,
+    };
   }
 
   private loadFromStorage(): void {

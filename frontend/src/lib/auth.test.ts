@@ -7,7 +7,7 @@ import { authManager, type AuthResponse, type UserDTO } from './auth.svelte';
 
 // Mock fetch
 const fetchMock = vi.fn();
-global.fetch = fetchMock;
+globalThis.fetch = fetchMock;
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -58,10 +58,7 @@ describe('AuthManager', () => {
     // Reset fetch mock
     vi.clearAllMocks();
 
-    // Clear any existing auth data
-    if (authManager.isAuthenticated) {
-      void authManager.logout();
-    }
+    authManager.reset();
   });
 
   afterEach(() => {
@@ -216,7 +213,7 @@ describe('AuthManager', () => {
 
       await authManager.logout();
 
-      expect(global.fetch).toHaveBeenCalledWith(
+      expect(globalThis.fetch).toHaveBeenCalledWith(
         '/api/auth/logout',
         expect.objectContaining({
           method: 'POST',
@@ -389,7 +386,7 @@ describe('AuthManager', () => {
   });
 
   describe('proxy mode bootstrap', () => {
-    it('should initialize proxy mode and session user from backend', async () => {
+    it('should initialize proxy mode and authenticate via backend login route', async () => {
       fetchMock
         .mockResolvedValueOnce({
           ok: true,
@@ -397,7 +394,7 @@ describe('AuthManager', () => {
         })
         .mockResolvedValueOnce({
           ok: true,
-          json: () => Promise.resolve({ mode: 'proxy', user: mockUser }),
+          json: () => Promise.resolve(mockAuthResponse),
         });
 
       await authManager.initializeAuth();
@@ -406,10 +403,48 @@ describe('AuthManager', () => {
       expect(authManager.isProxyMode).toBe(true);
       expect(authManager.isAuthenticated).toBe(true);
       expect(authManager.user?.id).toBe(mockUser.id);
+      expect(authManager.token).toBeNull();
+      expect(authManager.refreshToken).toBeNull();
+      expect(localStorage.getItem('authToken')).toBeNull();
       expect(authManager.getAuthHeader()).toBeNull();
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(2, '/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
     });
 
-    it('should block local login when proxy mode is active', async () => {
+    it('should surface missing proxy header errors from backend login route', async () => {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ mode: 'proxy' }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({
+            error: {
+              code: 'UNAUTHORIZED',
+              message: 'Missing trusted proxy identity header: x-forwarded-user',
+            },
+          }),
+        });
+
+      await authManager.initializeAuth();
+
+      expect(authManager.isInitialized).toBe(true);
+      expect(authManager.isProxyMode).toBe(true);
+      expect(authManager.isAuthenticated).toBe(false);
+      expect(authManager.error).toEqual({
+        code: 'UNAUTHORIZED',
+        message: 'Missing trusted proxy identity header: x-forwarded-user',
+      });
+    });
+
+    it('should use backend proxy login when login is called in proxy mode', async () => {
       fetchMock
         .mockResolvedValueOnce({
           ok: true,
@@ -417,18 +452,29 @@ describe('AuthManager', () => {
         })
         .mockResolvedValueOnce({
           ok: true,
-          json: () => Promise.resolve({ mode: 'proxy', user: mockUser }),
+          json: () => Promise.resolve(mockAuthResponse),
         });
 
       await authManager.initializeAuth();
 
-      const result = await authManager.login({
-        username: 'testuser',
-        password: 'password123',
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockAuthResponse),
       });
 
-      expect(result).toBe(false);
-      expect(authManager.error?.code).toBe('AUTH_MODE_PROXY');
+      const result = await authManager.login({
+        username: 'ignored',
+        password: 'ignored',
+      });
+
+      expect(result).toBe(true);
+      expect(globalThis.fetch).toHaveBeenLastCalledWith('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
     });
   });
 });
