@@ -317,7 +317,7 @@ export class AuthenticationService {
     username: string,
     ipAddress?: string,
     userAgent?: string,
-    options?: { email?: string; autoProvision?: boolean }
+    options?: { email?: string; fullName?: string; autoProvision?: boolean }
   ): Promise<AuthResult> {
     const startTime = Date.now();
 
@@ -337,11 +337,14 @@ export class AuthenticationService {
           // Generate an unusable random password hash so no password-based login is possible
           const unusablePasswordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
           const email = options.email ?? `${username}@provisioned.local`;
+          const nameParts = options.fullName?.trim().split(/\s+/).filter(Boolean) ?? [];
+          const firstName = nameParts.length > 0 ? nameParts[0] : username;
+          const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
 
           await this.db.execute(
             `INSERT INTO users (id, username, email, passwordHash, firstName, lastName, isActive, isAdmin, createdAt, updatedAt)
              VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
-            [userId, username, email, unusablePasswordHash, username, '', now, now]
+            [userId, username, email, unusablePasswordHash, firstName, lastName, now, now]
           );
 
           logger.info('Auto-provisioned local account for proxy-authenticated user', {

@@ -294,6 +294,7 @@ export function createAuthRouter(
               email: process.env.AUTH_PROXY_EMAIL_HEADER
                 ? req.header(process.env.AUTH_PROXY_EMAIL_HEADER)?.trim()
                 : undefined,
+              fullName: req.header((process.env.AUTH_PROXY_NAME_HEADER ?? "x-remote-name").trim())?.trim(),
               autoProvision: process.env.AUTO_PROVISION_EXTERNAL_USERS === 'true',
             },
           );

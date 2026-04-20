@@ -32,6 +32,13 @@ export function createAuthMiddleware(db: DatabaseAdapter, jwtSecret?: string) {
 
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+      // If an upstream auth middleware already authenticated this request,
+      // avoid re-checking the Authorization header.
+      if (req.user) {
+        next();
+        return;
+      }
+
       // Extract token from Authorization header
       const authHeader = req.headers.authorization;
 

@@ -98,11 +98,13 @@ describe('Auth Routes - Proxy Mode', () => {
     beforeEach(() => {
       process.env.AUTO_PROVISION_EXTERNAL_USERS = 'true';
       process.env.AUTH_PROXY_EMAIL_HEADER = 'x-forwarded-email';
+      process.env.AUTH_PROXY_NAME_HEADER = 'x-remote-name';
     });
 
     afterEach(() => {
       delete process.env.AUTO_PROVISION_EXTERNAL_USERS;
       delete process.env.AUTH_PROXY_EMAIL_HEADER;
+      delete process.env.AUTH_PROXY_NAME_HEADER;
     });
 
     it('auto-provisions a new user on first proxy login', async () => {
@@ -134,6 +136,20 @@ describe('Auth Routes - Proxy Mode', () => {
         .expect(200);
 
       expect(response.body.user.username).toBe('emailuser');
+    });
+
+    it('uses proxy name header to split first and last name when provisioning', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .set('x-forwarded-user', 'nameduser')
+        .set('x-forwarded-email', 'nameduser@example.com')
+        .set('x-remote-name', 'Jane Mary Doe')
+        .send({})
+        .expect(200);
+
+      expect(response.body.user.username).toBe('nameduser');
+      expect(response.body.user.firstName).toBe('Jane');
+      expect(response.body.user.lastName).toBe('Mary Doe');
     });
 
     it('returns 401 for unknown user when auto-provision is disabled', async () => {

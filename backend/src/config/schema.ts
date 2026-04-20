@@ -63,6 +63,7 @@ export type UIConfig = z.infer<typeof UIConfigSchema>;
 export const ProxyAuthConfigSchema = z.object({
   userHeader: z.string().default("x-forwarded-user"),
   emailHeader: z.string().optional(),
+  nameHeader: z.string().default("x-remote-name"),
   groupsHeader: z.string().optional(),
   autoProvisionExternalUsers: z.boolean().default(false),
 });

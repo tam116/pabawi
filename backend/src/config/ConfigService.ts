@@ -590,6 +590,7 @@ export class ConfigService {
         proxy: {
           userHeader: process.env.AUTH_PROXY_USER_HEADER,
           emailHeader: process.env.AUTH_PROXY_EMAIL_HEADER,
+          nameHeader: process.env.AUTH_PROXY_NAME_HEADER,
           groupsHeader: process.env.AUTH_PROXY_GROUPS_HEADER,
           autoProvisionExternalUsers: process.env.AUTO_PROVISION_EXTERNAL_USERS === 'true',
         },
